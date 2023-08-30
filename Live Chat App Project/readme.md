@@ -1,7 +1,5 @@
 # Live Chat WebSockets Project
 
-![Project Architecture](architecture_diagram.png)
-
 Welcome to the Live Chat WebSockets project! In this project, you'll learn how to build a real-time chat application using WebSockets. WebSockets enable seamless communication between clients and servers, making it perfect for applications like chat rooms. Whether you're a beginner or experienced developer, this project will guide you through the process of creating a dynamic and interactive chat platform.
 
 ## Table of Contents
@@ -20,7 +18,7 @@ Welcome to the Live Chat WebSockets project! In this project, you'll learn how t
 The Live Chat WebSockets project empowers you to develop a real-time chat application where users can communicate instantly within custom chat rooms. Unlike traditional APIs, WebSockets maintain persistent connections, allowing for seamless bidirectional communication. This project will guide you through creating, joining, and interacting in chat rooms using different message types.
 
 ## Architecture
-![Project Architecture](architecture.png)
+![Project Architecture](architecture_diagram.png)
 
 Our project architecture leverages AWS services such as AWS Lambda, DynamoDB, and API Gateway to create a scalable and reliable chat application. The WebSockets API Gateway handles WebSocket connections, while AWS Lambda functions manage room creation, user joining, message handling, and disconnection events. DynamoDB serves as the database to store room and user information.
 
