@@ -1,0 +1,222 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Resources:
+  ChatAppAPI:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: ChatAppAPI
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: "$request.body.action"
+
+
+  ChatAppData:
+      Type: 'AWS::DynamoDB::Table'
+      Properties:
+        TableName: ChatAppData
+        AttributeDefinitions:
+          - AttributeName: connectionId
+            AttributeType: S
+          - AttributeName: roomId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: connectionId
+            KeyType: HASH
+          - AttributeName: roomId
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+        GlobalSecondaryIndexes:
+          - IndexName: roomId-index
+            KeySchema:
+              - AttributeName: roomId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+        SSESpecification:
+          SSEEnabled: true
+        #DeletionProtectionEnabled: true
+  
+  
+  ChatAppAPIStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      StageName: Production  # Set the desired stage name
+      Description: Production Stage
+      AutoDeploy: true
+      ApiId: !Ref ChatAppAPI # Reference your WebSocket API resource
+  createRoomRoute:
+      Type: AWS::ApiGatewayV2::Route
+      Properties:
+        ApiId: !Ref ChatAppAPI
+        RouteKey: createRoom
+        AuthorizationType: NONE
+        OperationName: createRoomRoute
+        Target: !Sub integrations/${CreateRoomIntegration}
+  CreateRoomIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ChatAppAPI
+      Description: Connect Integration
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${createRoom.Arn}/invocations"
+
+  joinRoomRoute:
+      Type: AWS::ApiGatewayV2::Route
+      Properties:
+        ApiId: !Ref ChatAppAPI
+        RouteKey: joinRoom
+        AuthorizationType: NONE
+        OperationName: joinRoomRoute
+        Target: !Sub integrations/${joinRoomIntegration}
+
+  joinRoomIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ChatAppAPI
+      Description: Join Integration
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${joinRoom.Arn}/invocations"
+
+  
+  sendMessageRoute:
+      Type: AWS::ApiGatewayV2::Route
+      Properties:
+        ApiId: !Ref ChatAppAPI
+        RouteKey: sendMessage
+        AuthorizationType: NONE
+        OperationName: sendMessageRoute
+        Target: !Sub integrations/${sendMessageIntegration}
+
+  sendMessageIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ChatAppAPI
+      Description: Send Message Integration
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${sendMessage.Arn}/invocations"
+
+  disconnectRoute:
+      Type: AWS::ApiGatewayV2::Route
+      Properties:
+        ApiId: !Ref ChatAppAPI
+        RouteKey: $disconnect
+        AuthorizationType: NONE
+        OperationName: disconnectRoute
+        Target: !Sub integrations/${disconnectIntegration}
+
+  disconnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ChatAppAPI
+      Description: Disconnect Integration
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${disconnect.Arn}/invocations"
+  ChatAppRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: ChatAppRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonAPIGatewayInvokeFullAccess'  
+        - 'arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess'  
+        - 'arn:aws:iam::aws:policy/CloudWatchFullAccess'  
+  createRoom:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: createRoom.lambda_handler
+      MemorySize: 256
+      Runtime: python3.10
+      Environment:
+        Variables:
+          TableName: ChatAppData
+          endpointurl: !Sub "https://${ChatAppAPI}.execute-api.${AWS::Region}.amazonaws.com/${ChatAppAPIStage}"
+      Role: !GetAtt ChatAppRole.Arn
+
+  joinRoom:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: joinRoom.lambda_handler
+      MemorySize: 256
+      Runtime: python3.10
+      Environment:
+        Variables:
+          TableName: ChatAppData
+          endpointurl: !Sub "https://${ChatAppAPI}.execute-api.${AWS::Region}.amazonaws.com/${ChatAppAPIStage}"
+      Role: !GetAtt ChatAppRole.Arn
+
+  sendMessage:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: sendMessage.lambda_handler
+      MemorySize: 256
+      Runtime: python3.10
+      Environment:
+        Variables:
+          TableName: ChatAppData
+          endpointurl: !Sub "https://${ChatAppAPI}.execute-api.${AWS::Region}.amazonaws.com/${ChatAppAPIStage}"
+      Role: !GetAtt ChatAppRole.Arn
+
+
+  disconnect:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: disconnect.lambda_handler
+      MemorySize: 256
+      Runtime: python3.10
+      Environment:
+        Variables:
+          TableName: ChatAppData
+          endpointurl: !Sub "https://${ChatAppAPI}.execute-api.${AWS::Region}.amazonaws.com/${ChatAppAPIStage}"
+      Role: !GetAtt ChatAppRole.Arn
+  
+
+  createRoomLambdaPermissionForAPI:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt createRoom.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ChatAppAPI}/*/createRoom"
+  
+  joinRoomLambdaPermissionForAPI:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt joinRoom.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ChatAppAPI}/*/joinRoom"
+
+  sendMessageLambdaPermissionForAPI:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt sendMessage.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ChatAppAPI}/*/sendMessage"
+
+  disconnectLambdaPermissionForAPI:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt disconnect.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ChatAppAPI}/*/$disconnect"
+
+Outputs:
+  WebSocketURL:
+    Description : This URL is used to connect to the ChatApp from the client side.
+    Value : !Sub "wss://${ChatAppAPI}.execute-api.${AWS::Region}.amazonaws.com/${ChatAppAPIStage}"
+
+  ConnectionURL:
+    Description: This URL is used to send the response back to the client from the backend
+    Value : !Sub "https://${ChatAppAPI}.execute-api.${AWS::Region}.amazonaws.com/${ChatAppAPIStage}"
